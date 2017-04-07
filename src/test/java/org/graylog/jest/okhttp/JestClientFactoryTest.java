@@ -1,11 +1,8 @@
-package io.searchbox.client;
+package org.graylog.jest.okhttp;
 
-import java.util.HashSet;
-
+import io.searchbox.client.JestClient;
 import io.searchbox.client.config.ClientConfig;
-import io.searchbox.client.config.HttpClientConfig;
 import io.searchbox.client.config.discovery.NodeChecker;
-import io.searchbox.client.http.JestHttpClient;
 import org.apache.http.HttpHost;
 import org.apache.http.auth.AuthScope;
 import org.apache.http.auth.UsernamePasswordCredentials;
@@ -19,11 +16,17 @@ import org.apache.http.impl.conn.BasicHttpClientConnectionManager;
 import org.apache.http.impl.conn.PoolingHttpClientConnectionManager;
 import org.apache.http.impl.nio.conn.PoolingNHttpClientConnectionManager;
 import org.apache.http.nio.conn.NHttpClientConnectionManager;
+import org.graylog.jest.okhttp.config.HttpClientConfig;
+import org.graylog.jest.okhttp.http.JestHttpClient;
 import org.junit.Test;
 import org.mockito.Mockito;
 
+import java.util.HashSet;
+
 import static java.util.Arrays.asList;
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 
 /**
  * @author Dogukan Sonmez

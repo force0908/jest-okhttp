@@ -1,4 +1,4 @@
-package io.searchbox.client.http;
+package org.graylog.jest.okhttp.http;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;

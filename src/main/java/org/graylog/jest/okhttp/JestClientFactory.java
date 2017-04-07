@@ -1,12 +1,9 @@
-package io.searchbox.client;
+package org.graylog.jest.okhttp;
 
 import com.google.gson.Gson;
-import io.searchbox.client.config.HttpClientConfig;
+import io.searchbox.client.JestClient;
 import io.searchbox.client.config.discovery.NodeChecker;
-import io.searchbox.client.config.idle.HttpReapableConnectionManager;
 import io.searchbox.client.config.idle.IdleConnectionReaper;
-import io.searchbox.client.http.JestHttpClient;
-
 import org.apache.commons.lang3.StringUtils;
 import org.apache.http.HttpHost;
 import org.apache.http.client.AuthCache;
@@ -34,6 +31,9 @@ import org.apache.http.impl.nio.reactor.IOReactorConfig;
 import org.apache.http.nio.conn.NHttpClientConnectionManager;
 import org.apache.http.nio.conn.SchemeIOSessionStrategy;
 import org.apache.http.nio.reactor.IOReactorException;
+import org.graylog.jest.okhttp.config.HttpClientConfig;
+import org.graylog.jest.okhttp.config.idle.HttpReapableConnectionManager;
+import org.graylog.jest.okhttp.http.JestHttpClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

@@ -1,9 +1,5 @@
-package io.searchbox.client.http;
+package org.graylog.jest.okhttp.http;
 
-import io.searchbox.client.JestClientFactory;
-import io.searchbox.client.config.HttpClientConfig;
-import io.searchbox.client.http.apache.HttpDeleteWithEntity;
-import io.searchbox.client.http.apache.HttpGetWithEntity;
 import io.searchbox.core.Search;
 import io.searchbox.core.search.sort.Sort;
 import org.apache.commons.io.IOUtils;
@@ -17,6 +13,10 @@ import org.apache.http.client.methods.*;
 import org.apache.http.client.protocol.HttpClientContext;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.message.BasicStatusLine;
+import org.graylog.jest.okhttp.JestClientFactory;
+import org.graylog.jest.okhttp.config.HttpClientConfig;
+import org.graylog.jest.okhttp.http.apache.HttpDeleteWithEntity;
+import org.graylog.jest.okhttp.http.apache.HttpGetWithEntity;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
