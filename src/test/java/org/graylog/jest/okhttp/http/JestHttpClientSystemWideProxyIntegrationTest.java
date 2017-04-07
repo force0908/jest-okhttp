@@ -1,9 +1,11 @@
 package org.graylog.jest.okhttp.http;
 
+import com.carrotsearch.randomizedtesting.annotations.ThreadLeakFilters;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.http.HttpRequest;
 import io.searchbox.client.JestResult;
 import io.searchbox.client.JestResultHandler;
+import io.searchbox.common.OkHttpThreadsFilter;
 import io.searchbox.indices.Stats;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.node.Node;
@@ -14,6 +16,7 @@ import org.junit.After;
 import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.littleshoot.proxy.HttpFilters;
 import org.littleshoot.proxy.HttpFiltersAdapter;
@@ -32,6 +35,8 @@ import java.util.concurrent.atomic.AtomicInteger;
  * @author cihat keser
  */
 @ESIntegTestCase.ClusterScope(scope = ESIntegTestCase.Scope.TEST, numDataNodes = 0)
+@ThreadLeakFilters(filters = {OkHttpThreadsFilter.class})
+@Ignore("System-wide proxies are currently not supported")
 public class JestHttpClientSystemWideProxyIntegrationTest extends ESIntegTestCase {
 
     private static final int PROXY_PORT = 8790;

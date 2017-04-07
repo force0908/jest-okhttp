@@ -1,30 +1,24 @@
 package org.graylog.jest.okhttp.config;
 
 import io.searchbox.client.config.ClientConfig;
-import org.apache.http.HttpHost;
-import org.apache.http.auth.AuthScope;
-import org.apache.http.auth.UsernamePasswordCredentials;
-import org.apache.http.client.AuthenticationStrategy;
-import org.apache.http.client.CredentialsProvider;
-import org.apache.http.conn.routing.HttpRoute;
-import org.apache.http.conn.routing.HttpRoutePlanner;
-import org.apache.http.conn.socket.ConnectionSocketFactory;
-import org.apache.http.conn.socket.LayeredConnectionSocketFactory;
-import org.apache.http.conn.socket.PlainConnectionSocketFactory;
-import org.apache.http.conn.ssl.SSLConnectionSocketFactory;
-import org.apache.http.impl.client.BasicCredentialsProvider;
-import org.apache.http.impl.conn.DefaultProxyRoutePlanner;
-import org.apache.http.impl.conn.SystemDefaultRoutePlanner;
-import org.apache.http.nio.conn.NoopIOSessionStrategy;
-import org.apache.http.nio.conn.SchemeIOSessionStrategy;
-import org.apache.http.nio.conn.ssl.SSLIOSessionStrategy;
+import okhttp3.Authenticator;
+import okhttp3.HttpUrl;
+import org.graylog.jest.okhttp.http.okhttp.BasicAuthenticator;
 
+import javax.net.SocketFactory;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLSocketFactory;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.TrustManagerFactory;
+import javax.net.ssl.X509TrustManager;
+import java.net.Proxy;
 import java.net.ProxySelector;
+import java.security.GeneralSecurityException;
+import java.security.KeyStore;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Map;
 import java.util.Set;
 
 /**
@@ -33,96 +27,88 @@ import java.util.Set;
  */
 public class HttpClientConfig extends ClientConfig {
 
-    private final Integer maxTotalConnection;
-    private final Integer defaultMaxTotalConnectionPerRoute;
-    private final Map<HttpRoute, Integer> maxTotalConnectionPerRoute;
-    private final CredentialsProvider credentialsProvider;
-    private final LayeredConnectionSocketFactory sslSocketFactory;
-    private final ConnectionSocketFactory plainSocketFactory;
-    private final HttpRoutePlanner httpRoutePlanner;
-    private final AuthenticationStrategy proxyAuthenticationStrategy;
-    private final SchemeIOSessionStrategy httpIOSessionStrategy;
-    private final SchemeIOSessionStrategy httpsIOSessionStrategy;
-    private Set<HttpHost> preemptiveAuthTargetHosts;
+    private int writeTimeout;
+    private final Authenticator authenticator;
+    private final SocketFactory plainSocketFactory;
+    private final SSLSocketFactory sslSocketFactory;
+    private final X509TrustManager trustManager;
+    private final Proxy proxy;
+    private final Authenticator proxyAuthenticator;
+    private final ProxySelector proxySelector;
+    private Set<HttpUrl> preemptiveAuthTargetHosts;
 
     public HttpClientConfig(Builder builder) {
         super(builder);
-        this.maxTotalConnection = builder.maxTotalConnection;
-        this.defaultMaxTotalConnectionPerRoute = builder.defaultMaxTotalConnectionPerRoute;
-        this.maxTotalConnectionPerRoute = builder.maxTotalConnectionPerRoute;
-        this.credentialsProvider = builder.credentialsProvider;
-        this.sslSocketFactory = builder.sslSocketFactory;
+        this.writeTimeout = builder.writeTimeout;
+        this.authenticator = builder.authenticator;
         this.plainSocketFactory = builder.plainSocketFactory;
-        this.httpRoutePlanner = builder.httpRoutePlanner;
-        this.proxyAuthenticationStrategy = builder.proxyAuthenticationStrategy;
-        this.httpIOSessionStrategy = builder.httpIOSessionStrategy;
-        this.httpsIOSessionStrategy = builder.httpsIOSessionStrategy;
+        this.sslSocketFactory = builder.sslSocketFactory;
+        this.trustManager = builder.trustManager;
+        this.proxy = builder.proxy;
+        this.proxyAuthenticator = builder.proxyAuthenticator;
+        this.proxySelector = builder.proxySelector;
         this.preemptiveAuthTargetHosts = builder.preemptiveAuthTargetHosts;
     }
 
-    public Map<HttpRoute, Integer> getMaxTotalConnectionPerRoute() {
-        return maxTotalConnectionPerRoute;
+    public int getWriteTimeout() {
+        return writeTimeout;
     }
 
-    public Integer getMaxTotalConnection() {
-        return maxTotalConnection;
+    public Authenticator getAuthenticator() {
+        return authenticator;
     }
 
-    public Integer getDefaultMaxTotalConnectionPerRoute() {
-        return defaultMaxTotalConnectionPerRoute;
-    }
-
-    public CredentialsProvider getCredentialsProvider() {
-        return credentialsProvider;
-    }
-
-    public LayeredConnectionSocketFactory getSslSocketFactory() {
-        return sslSocketFactory;
-    }
-
-    public ConnectionSocketFactory getPlainSocketFactory() {
+    public SocketFactory getPlainSocketFactory() {
         return plainSocketFactory;
     }
 
-    public HttpRoutePlanner getHttpRoutePlanner() {
-        return httpRoutePlanner;
+    public SSLSocketFactory getSslSocketFactory() {
+        return sslSocketFactory;
     }
 
-    public AuthenticationStrategy getProxyAuthenticationStrategy() {
-        return proxyAuthenticationStrategy;
+    public X509TrustManager getTrustManager() {
+        return trustManager;
     }
 
-    public SchemeIOSessionStrategy getHttpIOSessionStrategy() {
-        return httpIOSessionStrategy;
+    public Proxy getProxy() {
+        return proxy;
     }
 
-    public SchemeIOSessionStrategy getHttpsIOSessionStrategy() {
-        return httpsIOSessionStrategy;
+    public Authenticator getProxyAuthenticator() {
+        return proxyAuthenticator;
     }
 
-    public Set<HttpHost> getPreemptiveAuthTargetHosts() {
+    public ProxySelector getProxySelector() {
+        return proxySelector;
+    }
+
+    public Set<HttpUrl> getPreemptiveAuthTargetHosts() {
         return preemptiveAuthTargetHosts;
     }
 
     public static class Builder extends ClientConfig.AbstractBuilder<HttpClientConfig, Builder> {
 
-        private Integer maxTotalConnection;
-        private Integer defaultMaxTotalConnectionPerRoute;
-        private Map<HttpRoute, Integer> maxTotalConnectionPerRoute = new HashMap<HttpRoute, Integer>();
-        private CredentialsProvider credentialsProvider;
-        private LayeredConnectionSocketFactory sslSocketFactory;
-        private ConnectionSocketFactory plainSocketFactory;
-        private HttpRoutePlanner httpRoutePlanner;
-        private AuthenticationStrategy proxyAuthenticationStrategy;
-        private SchemeIOSessionStrategy httpIOSessionStrategy;
-        private SchemeIOSessionStrategy httpsIOSessionStrategy;
-        private Set<HttpHost> preemptiveAuthTargetHosts = Collections.emptySet();
+        private int writeTimeout = 3000;
+        private Authenticator authenticator;
+        private SocketFactory plainSocketFactory;
+        private SSLSocketFactory sslSocketFactory;
+        private X509TrustManager trustManager;
+        private Proxy proxy;
+        private Authenticator proxyAuthenticator;
+        private ProxySelector proxySelector;
+        private Set<HttpUrl> preemptiveAuthTargetHosts = Collections.emptySet();
 
         public Builder(HttpClientConfig httpClientConfig) {
             super(httpClientConfig);
-            this.maxTotalConnection = httpClientConfig.maxTotalConnection;
-            this.defaultMaxTotalConnectionPerRoute = httpClientConfig.defaultMaxTotalConnectionPerRoute;
-            this.maxTotalConnectionPerRoute = httpClientConfig.maxTotalConnectionPerRoute;
+            this.writeTimeout = httpClientConfig.writeTimeout;
+            this.authenticator = httpClientConfig.authenticator;
+            this.plainSocketFactory = httpClientConfig.plainSocketFactory;
+            this.sslSocketFactory = httpClientConfig.sslSocketFactory;
+            this.trustManager = httpClientConfig.trustManager;
+            this.proxy = httpClientConfig.proxy;
+            this.proxyAuthenticator = httpClientConfig.proxyAuthenticator;
+            this.proxySelector = httpClientConfig.proxySelector;
+            this.preemptiveAuthTargetHosts = httpClientConfig.preemptiveAuthTargetHosts;
         }
 
         public Builder(Collection<String> serverUris) {
@@ -133,23 +119,8 @@ public class HttpClientConfig extends ClientConfig {
             super(serverUri);
         }
 
-        public Builder maxTotalConnection(int maxTotalConnection) {
-            this.maxTotalConnection = maxTotalConnection;
-            return this;
-        }
-
-        public Builder defaultMaxTotalConnectionPerRoute(int defaultMaxTotalConnectionPerRoute) {
-            this.defaultMaxTotalConnectionPerRoute = defaultMaxTotalConnectionPerRoute;
-            return this;
-        }
-
-        public Builder maxTotalConnectionPerRoute(Map<HttpRoute, Integer> maxTotalConnectionPerRoute) {
-            this.maxTotalConnectionPerRoute.putAll(maxTotalConnectionPerRoute);
-            return this;
-        }
-
-        public Builder maxTotalConnectionPerRoute(HttpRoute httpRoute, int maxTotalConnection) {
-            this.maxTotalConnectionPerRoute.put(httpRoute, maxTotalConnection);
+        public Builder writeTimeout(int writeTimeout) {
+            this.writeTimeout = writeTimeout;
             return this;
         }
 
@@ -157,17 +128,27 @@ public class HttpClientConfig extends ClientConfig {
          * Set a custom instance of an implementation of <code>CredentialsProvider</code>.
          * This method will override any previous credential setting (including <code>defaultCredentials</code>) on this builder instance.
          */
-        public Builder credentialsProvider(CredentialsProvider credentialsProvider) {
-            this.credentialsProvider = credentialsProvider;
+        public Builder authenticator(Authenticator authenticator) {
+            this.authenticator = authenticator;
             return this;
         }
 
         public Builder defaultCredentials(String username, String password) {
-            this.credentialsProvider = new BasicCredentialsProvider();
-            this.credentialsProvider.setCredentials(
-                    AuthScope.ANY,
-                    new UsernamePasswordCredentials(username, password)
-            );
+            this.authenticator = new BasicAuthenticator(username, password);
+            return this;
+        }
+
+        /**
+         * Sets the socket factory that will be used by <b>sync</b> client for HTTPS scheme.
+         * <p>
+         * <code>PlainConnectionSocketFactory.getSocketFactory()</code> is used by default.
+         * </p>
+         *
+         * @param socketFactory socket factory instance that will be registered for <code>http</code> scheme.
+         * @see SocketFactory
+         */
+        public Builder plainSocketFactory(SocketFactory socketFactory) {
+            this.plainSocketFactory = socketFactory;
             return this;
         }
 
@@ -193,52 +174,15 @@ public class HttpClientConfig extends ClientConfig {
          * </pre>
          *
          * @param socketFactory socket factory instance that will be registered for <code>https</code> scheme.
-         * @see SSLConnectionSocketFactory
+         * @see SSLSocketFactory
          */
-        public Builder sslSocketFactory(LayeredConnectionSocketFactory socketFactory) {
+        public Builder sslSocketFactory(SSLSocketFactory socketFactory) {
             this.sslSocketFactory = socketFactory;
             return this;
         }
 
-        /**
-         * Sets the socket factory that will be used by <b>sync</b> client for HTTPS scheme.
-         * <p>
-         * <code>PlainConnectionSocketFactory.getSocketFactory()</code> is used by default.
-         * </p>
-         *
-         * @param socketFactory socket factory instance that will be registered for <code>http</code> scheme.
-         * @see PlainConnectionSocketFactory
-         */
-        public Builder plainSocketFactory(ConnectionSocketFactory socketFactory) {
-            this.plainSocketFactory = socketFactory;
-            return this;
-        }
-
-        /**
-         * Sets the socket factory that will be used by <b>async</b> client for HTTP scheme.
-         * <p>
-         * <code>NoopIOSessionStrategy.INSTANCE</code> is used by default.
-         * </p>
-         *
-         * @param httpIOSessionStrategy SchemeIOSessionStrategy instance that will be registered for <code>http</code> scheme.
-         * @see NoopIOSessionStrategy
-         */
-        public Builder httpIOSessionStrategy(SchemeIOSessionStrategy httpIOSessionStrategy) {
-            this.httpIOSessionStrategy = httpIOSessionStrategy;
-            return this;
-        }
-
-        /**
-         * Sets the socket factory that will be used by <b>async</b> client for HTTPS scheme.
-         * <p>
-         * <code>SSLIOSessionStrategy.getSystemDefaultStrategy()</code> is used by default.
-         * </p>
-         *
-         * @param httpsIOSessionStrategy SchemeIOSessionStrategy instance that will be registered for <code>https</code> scheme.
-         * @see SSLIOSessionStrategy
-         */
-        public Builder httpsIOSessionStrategy(SchemeIOSessionStrategy httpsIOSessionStrategy) {
-            this.httpsIOSessionStrategy = httpsIOSessionStrategy;
+        public Builder trustManager(X509TrustManager trustManager) {
+            this.trustManager = trustManager;
             return this;
         }
 
@@ -250,7 +194,7 @@ public class HttpClientConfig extends ClientConfig {
          * If preemptive authentication is set without setting a credentials provider an exception will be thrown.
          * </p>
          */
-        public Builder setPreemptiveAuth(HttpHost targetHost) {
+        public Builder setPreemptiveAuth(HttpUrl targetHost) {
             return preemptiveAuthTargetHosts(Collections.singleton(targetHost));
         }
 
@@ -261,41 +205,53 @@ public class HttpClientConfig extends ClientConfig {
          * </p><p>
          * If preemptive authentication is set without setting a credentials provider an exception will be thrown.
          * </p>
+         *
          * @param preemptiveAuthTargetHosts set of hosts targeted for preemptive authentication
          */
-        public Builder preemptiveAuthTargetHosts(Set<HttpHost> preemptiveAuthTargetHosts) {
+        public Builder preemptiveAuthTargetHosts(Set<HttpUrl> preemptiveAuthTargetHosts) {
             if (preemptiveAuthTargetHosts != null) {
-                this.preemptiveAuthTargetHosts = new HashSet<HttpHost>(preemptiveAuthTargetHosts);
+                this.preemptiveAuthTargetHosts = new HashSet<>(preemptiveAuthTargetHosts);
             }
             return this;
         }
 
-        public Builder proxy(HttpHost proxy) {
-            return proxy(proxy, null);
+        public Builder proxy(Proxy proxy) {
+            this.proxy = proxy;
+            return this;
         }
 
-        public Builder proxy(HttpHost proxy, AuthenticationStrategy proxyAuthenticationStrategy) {
-            this.httpRoutePlanner = new DefaultProxyRoutePlanner(proxy);
-            this.proxyAuthenticationStrategy = proxyAuthenticationStrategy;
+        public Builder proxyAuthenticator(Authenticator proxyAuthenticator) {
+            this.proxyAuthenticator = proxyAuthenticator;
+            return this;
+        }
+
+        public Builder proxySelector(ProxySelector proxySelector) {
+            this.proxySelector = proxySelector;
             return this;
         }
 
         public HttpClientConfig build() {
             // Lazily initialize if necessary, as the call can be expensive when done eagerly.
+            if (this.authenticator == null) {
+                this.authenticator = Authenticator.NONE;
+            }
+            if (this.plainSocketFactory == null) {
+                this.plainSocketFactory = SocketFactory.getDefault();
+            }
+            if (this.trustManager == null) {
+                this.trustManager = systemDefaultTrustManager();
+            }
             if (this.sslSocketFactory == null) {
-                this.sslSocketFactory = SSLConnectionSocketFactory.getSocketFactory();
+                this.sslSocketFactory = systemDefaultSslSocketFactory(trustManager);
             }
-            if(this.plainSocketFactory == null) {
-                this.plainSocketFactory = PlainConnectionSocketFactory.getSocketFactory();
+            if (this.proxy == null) {
+                this.proxy = Proxy.NO_PROXY;
             }
-            if(this.httpRoutePlanner == null) {
-                this.httpRoutePlanner = new SystemDefaultRoutePlanner(ProxySelector.getDefault());
+            if (this.proxyAuthenticator == null) {
+                this.proxyAuthenticator = Authenticator.NONE;
             }
-            if(this.httpIOSessionStrategy == null) {
-                this.httpIOSessionStrategy = NoopIOSessionStrategy.INSTANCE;
-            }
-            if(this.httpsIOSessionStrategy == null) {
-                this.httpsIOSessionStrategy = SSLIOSessionStrategy.getSystemDefaultStrategy();
+            if (this.proxySelector == null) {
+                this.proxySelector = ProxySelector.getDefault();
             }
 
             if (preemptiveAuthSetWithoutCredentials()) {
@@ -306,9 +262,33 @@ public class HttpClientConfig extends ClientConfig {
         }
 
         private boolean preemptiveAuthSetWithoutCredentials() {
-            return !preemptiveAuthTargetHosts.isEmpty() && credentialsProvider == null;
+            return !preemptiveAuthTargetHosts.isEmpty() && authenticator == null;
         }
 
-    }
+        private SSLSocketFactory systemDefaultSslSocketFactory(X509TrustManager trustManager) {
+            try {
+                SSLContext sslContext = SSLContext.getInstance("TLS");
+                sslContext.init(null, new TrustManager[]{trustManager}, null);
+                return sslContext.getSocketFactory();
+            } catch (GeneralSecurityException e) {
+                throw new AssertionError(); // The system has no TLS. Just give up.
+            }
+        }
 
+        private X509TrustManager systemDefaultTrustManager() {
+            try {
+                TrustManagerFactory trustManagerFactory = TrustManagerFactory.getInstance(
+                        TrustManagerFactory.getDefaultAlgorithm());
+                trustManagerFactory.init((KeyStore) null);
+                TrustManager[] trustManagers = trustManagerFactory.getTrustManagers();
+                if (trustManagers.length != 1 || !(trustManagers[0] instanceof X509TrustManager)) {
+                    throw new IllegalStateException("Unexpected default trust managers:"
+                            + Arrays.toString(trustManagers));
+                }
+                return (X509TrustManager) trustManagers[0];
+            } catch (GeneralSecurityException e) {
+                throw new AssertionError(); // The system has no TLS. Just give up.
+            }
+        }
+    }
 }

@@ -1,11 +1,12 @@
 package org.graylog.jest.okhttp.http;
 
+import com.carrotsearch.randomizedtesting.annotations.ThreadLeakFilters;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.http.HttpRequest;
 import io.searchbox.client.JestResult;
 import io.searchbox.client.JestResultHandler;
+import io.searchbox.common.OkHttpThreadsFilter;
 import io.searchbox.indices.Stats;
-import org.apache.http.HttpHost;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.node.Node;
 import org.elasticsearch.test.ESIntegTestCase;
@@ -21,6 +22,8 @@ import org.littleshoot.proxy.HttpProxyServer;
 import org.littleshoot.proxy.impl.DefaultHttpProxyServer;
 
 import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.net.Proxy;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -30,6 +33,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * @author cihat keser
  */
 @ESIntegTestCase.ClusterScope(scope = ESIntegTestCase.Scope.TEST, numDataNodes = 0)
+@ThreadLeakFilters(filters = {OkHttpThreadsFilter.class})
 public class JestHttpClientConfiguredProxyIntegrationTest extends ESIntegTestCase {
 
     private static final int PROXY_PORT = 8770;
@@ -81,7 +85,7 @@ public class JestHttpClientConfiguredProxyIntegrationTest extends ESIntegTestCas
         // test sync execution
         factory.setHttpClientConfig(new HttpClientConfig
                 .Builder("http://localhost:" + cluster().httpAddresses()[0].getPort())
-                .proxy(new HttpHost("localhost", PROXY_PORT))
+                .proxy(new Proxy(Proxy.Type.HTTP, InetSocketAddress.createUnresolved("localhost", PROXY_PORT)))
                 .build());
         customJestClient = (JestHttpClient) factory.getObject();
 
@@ -93,7 +97,7 @@ public class JestHttpClientConfiguredProxyIntegrationTest extends ESIntegTestCas
         // test async execution
         factory.setHttpClientConfig(new HttpClientConfig
                 .Builder("http://localhost:" + cluster().httpAddresses()[0].getPort())
-                .proxy(new HttpHost("localhost", PROXY_PORT))
+                .proxy(new Proxy(Proxy.Type.HTTP, InetSocketAddress.createUnresolved("localhost", PROXY_PORT)))
                 .multiThreaded(true)
                 .build());
         customJestClient = (JestHttpClient) factory.getObject();

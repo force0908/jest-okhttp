@@ -3,6 +3,7 @@ package io.searchbox.core;
 import io.searchbox.common.AbstractIntegrationTest;
 import org.elasticsearch.action.index.IndexRequest;
 import org.elasticsearch.test.ESIntegTestCase;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -13,6 +14,7 @@ import java.io.IOException;
  * @author Dogukan Sonmez
  */
 @ESIntegTestCase.ClusterScope(scope = ESIntegTestCase.Scope.SUITE, numDataNodes = 1)
+@Ignore("GET requests with body are currently not supported by OkHttp")
 public class ExplainIntegrationTest extends AbstractIntegrationTest {
 
     final static Logger log = LoggerFactory.getLogger(ExplainIntegrationTest.class);

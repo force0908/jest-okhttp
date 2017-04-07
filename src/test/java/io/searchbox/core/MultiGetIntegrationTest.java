@@ -8,6 +8,7 @@ import io.searchbox.common.AbstractIntegrationTest;
 import org.elasticsearch.action.index.IndexRequest;
 import org.elasticsearch.test.ESIntegTestCase;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
 
 import java.io.IOException;
@@ -19,6 +20,7 @@ import java.util.List;
  * @author cihat keser
  */
 @ESIntegTestCase.ClusterScope(scope = ESIntegTestCase.Scope.SUITE, numDataNodes = 1)
+@Ignore("GET requests with body are currently not supported by OkHttp")
 public class MultiGetIntegrationTest extends AbstractIntegrationTest {
 
     private static final String TEST_INDEX = "twitter";

@@ -7,32 +7,26 @@ import io.searchbox.client.AbstractJestClient;
 import io.searchbox.client.JestResult;
 import io.searchbox.client.JestResultHandler;
 import io.searchbox.client.config.exception.CouldNotConnectException;
-import org.apache.http.Header;
-import org.apache.http.HttpEntityEnclosingRequest;
-import org.apache.http.HttpRequest;
-import org.apache.http.HttpResponse;
-import org.apache.http.StatusLine;
-import org.apache.http.client.entity.EntityBuilder;
-import org.apache.http.client.methods.CloseableHttpResponse;
-import org.apache.http.client.methods.HttpHead;
-import org.apache.http.client.methods.HttpPost;
-import org.apache.http.client.methods.HttpPut;
-import org.apache.http.client.methods.HttpUriRequest;
+import okhttp3.Call;
+import okhttp3.Callback;
+import okhttp3.Dispatcher;
+import okhttp3.HttpUrl;
+import okhttp3.MediaType;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+import okhttp3.Response;
+import okhttp3.ResponseBody;
 import org.apache.http.client.protocol.HttpClientContext;
-import org.apache.http.concurrent.FutureCallback;
 import org.apache.http.conn.HttpHostConnectException;
-import org.apache.http.entity.ContentType;
-import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.impl.nio.client.CloseableHttpAsyncClient;
-import org.apache.http.util.EntityUtils;
-import org.graylog.jest.okhttp.http.apache.HttpDeleteWithEntity;
-import org.graylog.jest.okhttp.http.apache.HttpGetWithEntity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.net.ConnectException;
 import java.util.Map.Entry;
-import java.util.concurrent.Future;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
 
 /**
  * @author Dogukan Sonmez
@@ -42,93 +36,76 @@ public class JestHttpClient extends AbstractJestClient {
 
     private final static Logger log = LoggerFactory.getLogger(JestHttpClient.class);
 
-    protected ContentType requestContentType = ContentType.APPLICATION_JSON.withCharset("utf-8");
+    protected MediaType requestContentType = MediaType.parse("application/json; utf-8");
 
-    private CloseableHttpClient httpClient;
-    private CloseableHttpAsyncClient asyncClient;
+    private OkHttpClient okHttpClient;
 
     private HttpClientContext httpClientContextTemplate;
 
     /**
-     * @throws IOException in case of a problem or the connection was aborted during request,
-     *                     or in case of a problem while reading the response stream
+     * @throws IOException              in case of a problem or the connection was aborted during request,
+     *                                  or in case of a problem while reading the response stream
      * @throws CouldNotConnectException if an {@link HttpHostConnectException} is encountered
      */
     @Override
     public <T extends JestResult> T execute(Action<T> clientRequest) throws IOException {
-        HttpUriRequest request = prepareRequest(clientRequest);
-        CloseableHttpResponse response = null;
+        Request request = prepareRequest(clientRequest);
+        Response response = null;
         try {
             response = executeRequest(request);
             return deserializeResponse(response, request, clientRequest);
-        } catch (HttpHostConnectException ex) {
-            throw new CouldNotConnectException(ex.getHost().toURI(), ex);
+        } catch (ConnectException ex) {
+            throw new CouldNotConnectException(request.url().toString(), ex);
         } finally {
-            if (response != null) {
-                try {
-                    response.close();
-                } catch (IOException ex) {
-                    log.error("Exception occurred while closing response stream.", ex);
-                }
+            if (response != null && response.body() != null) {
+                response.close();
             }
         }
     }
 
     @Override
     public <T extends JestResult> void executeAsync(final Action<T> clientRequest, final JestResultHandler<? super T> resultHandler) {
-        synchronized (this) {
-            if (!asyncClient.isRunning()) {
-                asyncClient.start();
-            }
-        }
-
-        HttpUriRequest request = prepareRequest(clientRequest);
+        final Request request = prepareRequest(clientRequest);
         executeAsyncRequest(clientRequest, resultHandler, request);
     }
 
     @Override
     public void shutdownClient() {
         super.shutdownClient();
-        try {
-            asyncClient.close();
-        } catch (IOException ex) {
-            log.error("Exception occurred while shutting down the async client.", ex);
-        }
-        try {
-            httpClient.close();
-        } catch (IOException ex) {
-            log.error("Exception occurred while shutting down the sync client.", ex);
+
+        if (okHttpClient != null) {
+            okHttpClient.connectionPool().evictAll();
         }
     }
 
-    protected <T extends JestResult> HttpUriRequest prepareRequest(final Action<T> clientRequest) {
+    protected <T extends JestResult> Request prepareRequest(final Action<T> clientRequest) {
         String elasticSearchRestUrl = getRequestURL(getNextServer(), clientRequest.getURI());
-        HttpUriRequest request = constructHttpMethod(clientRequest.getRestMethodName(), elasticSearchRestUrl, clientRequest.getData(gson));
+        Request.Builder requestBuilder = constructHttpMethod(clientRequest.getRestMethodName(), elasticSearchRestUrl, clientRequest.getData(gson));
 
         log.debug("Request method={} url={}", clientRequest.getRestMethodName(), elasticSearchRestUrl);
 
         // add headers added to action
         for (Entry<String, Object> header : clientRequest.getHeaders().entrySet()) {
-            request.addHeader(header.getKey(), header.getValue().toString());
+            requestBuilder.addHeader(header.getKey(), header.getValue().toString());
         }
 
-        return request;
+        return requestBuilder.build();
     }
 
-    protected CloseableHttpResponse executeRequest(HttpUriRequest request) throws IOException {
+    protected Response executeRequest(Request request) throws IOException {
         if (httpClientContextTemplate != null) {
-            return httpClient.execute(request, createContextInstance());
+            // return httpClient.execute(request, createContextInstance());
         }
 
-        return httpClient.execute(request);
+        return okHttpClient.newCall(request).execute();
     }
 
-    protected <T extends JestResult> Future<HttpResponse> executeAsyncRequest(Action<T> clientRequest, JestResultHandler<? super T> resultHandler, HttpUriRequest request) {
+    protected <T extends JestResult> void executeAsyncRequest(Action<T> clientRequest, JestResultHandler<? super T> resultHandler, Request request) {
         if (httpClientContextTemplate != null) {
-            return asyncClient.execute(request, createContextInstance(), new DefaultCallback<T>(clientRequest, request, resultHandler));
+            // return asyncClient.execute(request, createContextInstance(), new DefaultCallback<T>(clientRequest, resultHandler));
         }
 
-        return asyncClient.execute(request, new DefaultCallback<T>(clientRequest, request, resultHandler));
+        okHttpClient.newCall(request).enqueue(new DefaultCallback<T>(clientRequest, resultHandler));
     }
 
     protected HttpClientContext createContextInstance() {
@@ -139,57 +116,50 @@ public class JestHttpClient extends AbstractJestClient {
         return context;
     }
 
-    protected HttpUriRequest constructHttpMethod(String methodName, String url, String payload) {
-        HttpUriRequest httpUriRequest = null;
+    protected Request.Builder constructHttpMethod(String methodName, String url, String payload) {
+        Request.Builder requestBuilder = new Request.Builder()
+                .url(url);
+
+        final RequestBody requestBody = RequestBody.create(requestContentType, payload == null ? "" : payload);
 
         if (methodName.equalsIgnoreCase("POST")) {
-            httpUriRequest = new HttpPost(url);
+            requestBuilder = requestBuilder.post(requestBody);
             log.debug("POST method created based on client request");
         } else if (methodName.equalsIgnoreCase("PUT")) {
-            httpUriRequest = new HttpPut(url);
+            requestBuilder = requestBuilder.put(requestBody);
             log.debug("PUT method created based on client request");
         } else if (methodName.equalsIgnoreCase("DELETE")) {
-            httpUriRequest = new HttpDeleteWithEntity(url);
+            requestBuilder = requestBuilder.delete(requestBody);
             log.debug("DELETE method created based on client request");
         } else if (methodName.equalsIgnoreCase("GET")) {
-            httpUriRequest = new HttpGetWithEntity(url);
+            requestBuilder = requestBuilder.get();
+            // Required for Multi GET, but throws Exception:
+            //   java.lang.IllegalArgumentException: method GET must not have a request body.
+            // requestBuilder = requestBuilder.method("GET", requestBody);
             log.debug("GET method created based on client request");
         } else if (methodName.equalsIgnoreCase("HEAD")) {
-            httpUriRequest = new HttpHead(url);
+            requestBuilder = requestBuilder.head();
             log.debug("HEAD method created based on client request");
         }
 
-        if (httpUriRequest != null && httpUriRequest instanceof HttpEntityEnclosingRequest && payload != null) {
-            EntityBuilder entityBuilder = EntityBuilder.create()
-                    .setText(payload)
-                    .setContentType(requestContentType);
-
-            if (isRequestCompressionEnabled()) {
-                entityBuilder.gzipCompress();
-            }
-
-            ((HttpEntityEnclosingRequest) httpUriRequest).setEntity(entityBuilder.build());
-        }
-
-        return httpUriRequest;
+        return requestBuilder;
     }
 
-    private <T extends JestResult> T deserializeResponse(HttpResponse response, final HttpRequest httpRequest, Action<T> clientRequest) throws IOException {
-        StatusLine statusLine = response.getStatusLine();
+    private <T extends JestResult> T deserializeResponse(Response response, final Request httpRequest, Action<T> clientRequest) throws IOException {
         try {
+            final ResponseBody responseBody = response.body();
             return clientRequest.createNewElasticSearchResult(
-                    response.getEntity() == null ? null : EntityUtils.toString(response.getEntity()),
-                    statusLine.getStatusCode(),
-                    statusLine.getReasonPhrase(),
+                    responseBody == null ? null : responseBody.string(),
+                    response.code(),
+                    response.message(),
                     gson
             );
         } catch (com.google.gson.JsonSyntaxException e) {
-            for (Header header : response.getHeaders("Content-Type")) {
-                final String mimeType = header.getValue();
+            for (String mimeType : response.headers("Content-Type")) {
                 if (!mimeType.startsWith("application/json")) {
                     // probably a proxy that responded in text/html
                     final String message = "Request " + httpRequest.toString() + " yielded " + mimeType
-                            + ", should be json: " + statusLine.toString();
+                            + ", should be json: " + response.protocol() + " " + response.code() + " " + response.message();
                     throw new IOException(message, e);
                 }
             }
@@ -197,20 +167,13 @@ public class JestHttpClient extends AbstractJestClient {
         }
     }
 
-    public CloseableHttpClient getHttpClient() {
-        return httpClient;
+    public OkHttpClient getOkHttpClient() {
+        return okHttpClient;
     }
 
-    public void setHttpClient(CloseableHttpClient httpClient) {
-        this.httpClient = httpClient;
-    }
-
-    public CloseableHttpAsyncClient getAsyncClient() {
-        return asyncClient;
-    }
-
-    public void setAsyncClient(CloseableHttpAsyncClient asyncClient) {
-        this.asyncClient = asyncClient;
+    public JestHttpClient setOkHttpClient(OkHttpClient okHttpClient) {
+        this.okHttpClient = okHttpClient;
+        return this;
     }
 
     public Gson getGson() {
@@ -241,32 +204,32 @@ public class JestHttpClient extends AbstractJestClient {
         return super.getNextServer();
     }
 
-    protected class DefaultCallback<T extends JestResult> implements FutureCallback<HttpResponse> {
+    protected class DefaultCallback<T extends JestResult> implements Callback {
         private final Action<T> clientRequest;
-        private final HttpRequest request;
         private final JestResultHandler<? super T> resultHandler;
 
-        public DefaultCallback(Action<T> clientRequest, final HttpRequest request, JestResultHandler<? super T> resultHandler) {
+        public DefaultCallback(Action<T> clientRequest, JestResultHandler<? super T> resultHandler) {
             this.clientRequest = clientRequest;
-            this.request = request;
             this.resultHandler = resultHandler;
         }
 
         @Override
-        public void completed(final HttpResponse response) {
+        public void onResponse(Call call, Response response) throws IOException {
             T jestResult = null;
             try {
-                jestResult = deserializeResponse(response, request, clientRequest);
+                jestResult = deserializeResponse(response, call.request(), clientRequest);
             } catch (Exception e) {
-                failed(e);
+                onFailure(call, new IOException(e));
             } catch (Throwable t) {
-                failed(new Exception("Problem during request processing", t));
+                onFailure(call, new IOException("Problem during request processing", t));
             }
-            if (jestResult != null) resultHandler.completed(jestResult);
+            if (jestResult != null) {
+                resultHandler.completed(jestResult);
+            }
         }
 
         @Override
-        public void failed(final Exception ex) {
+        public void onFailure(Call call, IOException ex) {
             log.error("Exception occurred during async execution.", ex);
             if (ex instanceof HttpHostConnectException) {
                 String host = ((HttpHostConnectException) ex).getHost().toURI();
@@ -274,11 +237,6 @@ public class JestHttpClient extends AbstractJestClient {
                 return;
             }
             resultHandler.failed(ex);
-        }
-
-        @Override
-        public void cancelled() {
-            log.warn("Async execution was cancelled; this is not expected to occur under normal operation.");
         }
     }
 

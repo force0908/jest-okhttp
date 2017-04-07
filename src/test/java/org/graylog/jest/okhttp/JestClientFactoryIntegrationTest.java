@@ -1,8 +1,11 @@
 package org.graylog.jest.okhttp;
 
+import com.carrotsearch.randomizedtesting.annotations.ThreadLeakFilters;
+import com.carrotsearch.randomizedtesting.annotations.ThreadLeakScope;
 import io.searchbox.cluster.Health;
-import org.apache.http.impl.conn.PoolingHttpClientConnectionManager;
-import org.apache.http.pool.PoolStats;
+import io.searchbox.common.OkHttpThreadsFilter;
+import okhttp3.Dispatcher;
+import okhttp3.OkHttpClient;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.node.Node;
 import org.elasticsearch.test.ESIntegTestCase;
@@ -14,15 +17,17 @@ import org.junit.Test;
 
 import java.io.IOException;
 import java.lang.reflect.Field;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 
 /**
  * @author cihat keser
  */
 @ClusterScope(scope = Scope.TEST, numDataNodes = 0)
+@ThreadLeakFilters(filters = {OkHttpThreadsFilter.class})
 public class JestClientFactoryIntegrationTest extends ESIntegTestCase {
 
-    JestClientFactory factory = new JestClientFactory();
+    private JestClientFactory factory = new JestClientFactory();
 
     @Test
     public void testDiscovery() throws InterruptedException, IOException {
@@ -33,7 +38,7 @@ public class JestClientFactoryIntegrationTest extends ESIntegTestCase {
         factory.setHttpClientConfig(new HttpClientConfig
                 .Builder("http://localhost:" + cluster().httpAddresses()[0].getPort())
                 .discoveryEnabled(true)
-                .discoveryFrequency(500l, TimeUnit.MILLISECONDS)
+                .discoveryFrequency(500L, TimeUnit.MILLISECONDS)
                 .build());
         JestHttpClient jestClient = (JestHttpClient) factory.getObject();
         assertNotNull(jestClient);
@@ -63,6 +68,7 @@ public class JestClientFactoryIntegrationTest extends ESIntegTestCase {
                 jestClient.getServerPoolSize()
         );
         jestClient.shutdownClient();
+        shutdownOkHttp(jestClient.getOkHttpClient());
     }
 
     @Test
@@ -85,7 +91,7 @@ public class JestClientFactoryIntegrationTest extends ESIntegTestCase {
                 .Builder("http://localhost:" + cluster().httpAddresses()[0].getPort())
                 .discoveryEnabled(true)
                 .discoveryFilter("type:aardvark")
-                .discoveryFrequency(500l, TimeUnit.MILLISECONDS)
+                .discoveryFrequency(500L, TimeUnit.MILLISECONDS)
                 .build());
         JestHttpClient jestClient = (JestHttpClient) factory.getObject();
         assertNotNull(jestClient);
@@ -100,6 +106,7 @@ public class JestClientFactoryIntegrationTest extends ESIntegTestCase {
         );
 
         jestClient.shutdownClient();
+        shutdownOkHttp(jestClient.getOkHttpClient());
     }
 
 
@@ -112,7 +119,7 @@ public class JestClientFactoryIntegrationTest extends ESIntegTestCase {
                 .Builder("http://localhost:" + cluster().httpAddresses()[0].getPort())
                 .multiThreaded(true)
                 .discoveryEnabled(true)
-                .discoveryFrequency(100l, TimeUnit.MILLISECONDS)
+                .discoveryFrequency(100L, TimeUnit.MILLISECONDS)
                 .maxConnectionIdleTime(1500L, TimeUnit.MILLISECONDS)
                 .maxTotalConnection(75)
                 .defaultMaxTotalConnectionPerRoute(75)
@@ -138,6 +145,7 @@ public class JestClientFactoryIntegrationTest extends ESIntegTestCase {
         // in the pool at this point since our idle timeout is set so low for this test.
         assertTrue(maxPoolSize > newPoolSize);
         jestClient.shutdownClient();
+        shutdownOkHttp(jestClient.getOkHttpClient());
     }
 
     @Test
@@ -149,7 +157,7 @@ public class JestClientFactoryIntegrationTest extends ESIntegTestCase {
                 .Builder("http://localhost:" + cluster().httpAddresses()[0].getPort())
                 .multiThreaded(true)
                 .discoveryEnabled(true)
-                .discoveryFrequency(100l, TimeUnit.MILLISECONDS)
+                .discoveryFrequency(100L, TimeUnit.MILLISECONDS)
                 .maxTotalConnection(75)
                 .defaultMaxTotalConnectionPerRoute(75)
                 .build());
@@ -175,6 +183,7 @@ public class JestClientFactoryIntegrationTest extends ESIntegTestCase {
         // closed the connection).
         assertEquals(maxPoolSize, newPoolSize);
         jestClient.shutdownClient();
+        shutdownOkHttp(jestClient.getOkHttpClient());
     }
 
     /**
@@ -185,17 +194,11 @@ public class JestClientFactoryIntegrationTest extends ESIntegTestCase {
      */
     private int getPoolSize(JestHttpClient client) throws Exception {
         try {
-            Field fieldHttpClient = client.getClass().getDeclaredField("httpClient");
+            Field fieldHttpClient = client.getClass().getDeclaredField("okHttpClient");
             fieldHttpClient.setAccessible(true);
-            Object objInternalHttpClient = fieldHttpClient.get(client);
+            OkHttpClient innternalHttpClient = (OkHttpClient) fieldHttpClient.get(client);
 
-            Field fieldConnectionManager = objInternalHttpClient.getClass().getDeclaredField("connManager");
-            fieldConnectionManager.setAccessible(true);
-            PoolingHttpClientConnectionManager poolingHttpClientConnectionManager = (PoolingHttpClientConnectionManager) fieldConnectionManager.get(objInternalHttpClient);
-
-            PoolStats poolStats = poolingHttpClientConnectionManager.getTotalStats();
-
-            return poolStats.getAvailable() + poolStats.getLeased();
+            return innternalHttpClient.connectionPool().connectionCount();
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -208,5 +211,14 @@ public class JestClientFactoryIntegrationTest extends ESIntegTestCase {
                 .put(super.nodeSettings(nodeOrdinal))
                 .put(Node.HTTP_ENABLED, true)
                 .build();
+    }
+
+    private void shutdownOkHttp(OkHttpClient okHttpClient) throws InterruptedException {
+        okHttpClient.connectionPool().evictAll();
+        final Dispatcher dispatcher = okHttpClient.dispatcher();
+        dispatcher.cancelAll();
+        final ExecutorService executorService = dispatcher.executorService();
+        executorService.shutdown();
+        executorService.awaitTermination(10, TimeUnit.SECONDS);
     }
 }

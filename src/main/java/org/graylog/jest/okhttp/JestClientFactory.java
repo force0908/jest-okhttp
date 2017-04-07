@@ -1,51 +1,29 @@
 package org.graylog.jest.okhttp;
 
+import com.google.common.base.Strings;
 import com.google.gson.Gson;
 import io.searchbox.client.JestClient;
 import io.searchbox.client.config.discovery.NodeChecker;
 import io.searchbox.client.config.idle.IdleConnectionReaper;
-import org.apache.commons.lang3.StringUtils;
-import org.apache.http.HttpHost;
-import org.apache.http.client.AuthCache;
-import org.apache.http.client.config.RequestConfig;
-import org.apache.http.client.protocol.HttpClientContext;
-import org.apache.http.config.Registry;
-import org.apache.http.config.RegistryBuilder;
-import org.apache.http.conn.HttpClientConnectionManager;
-import org.apache.http.conn.routing.HttpRoute;
-import org.apache.http.conn.routing.HttpRoutePlanner;
-import org.apache.http.conn.socket.ConnectionSocketFactory;
-import org.apache.http.impl.auth.BasicScheme;
-import org.apache.http.impl.client.BasicAuthCache;
-import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.impl.client.HttpClientBuilder;
-import org.apache.http.impl.client.HttpClients;
-import org.apache.http.impl.conn.BasicHttpClientConnectionManager;
-import org.apache.http.impl.conn.PoolingHttpClientConnectionManager;
-import org.apache.http.impl.nio.client.CloseableHttpAsyncClient;
-import org.apache.http.impl.nio.client.HttpAsyncClientBuilder;
-import org.apache.http.impl.nio.client.HttpAsyncClients;
-import org.apache.http.impl.nio.conn.PoolingNHttpClientConnectionManager;
-import org.apache.http.impl.nio.reactor.DefaultConnectingIOReactor;
-import org.apache.http.impl.nio.reactor.IOReactorConfig;
-import org.apache.http.nio.conn.NHttpClientConnectionManager;
-import org.apache.http.nio.conn.SchemeIOSessionStrategy;
-import org.apache.http.nio.reactor.IOReactorException;
+import okhttp3.ConnectionPool;
+import okhttp3.HttpUrl;
+import okhttp3.OkHttpClient;
 import org.graylog.jest.okhttp.config.HttpClientConfig;
 import org.graylog.jest.okhttp.config.idle.HttpReapableConnectionManager;
 import org.graylog.jest.okhttp.http.JestHttpClient;
+import org.graylog.jest.okhttp.http.okhttp.GzipRequestInterceptor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 /**
  * @author Dogukan Sonmez
  */
 public class JestClientFactory {
 
-    final static Logger log = LoggerFactory.getLogger(JestClientFactory.class);
+    private static final Logger log = LoggerFactory.getLogger(JestClientFactory.class);
     private HttpClientConfig httpClientConfig;
 
     public JestClient getObject() {
@@ -58,10 +36,8 @@ public class JestClientFactory {
 
         client.setRequestCompressionEnabled(httpClientConfig.isRequestCompressionEnabled());
         client.setServers(httpClientConfig.getServerList());
-        final HttpClientConnectionManager connectionManager = getConnectionManager();
-        final NHttpClientConnectionManager asyncConnectionManager = getAsyncConnectionManager();
-        client.setHttpClient(createHttpClient(connectionManager));
-        client.setAsyncClient(createAsyncHttpClient(asyncConnectionManager));
+        final ConnectionPool connectionPool = getConnectionPool();
+        client.setOkHttpClient(createOkHttpClient(connectionPool));
 
         // set custom gson instance
         Gson gson = httpClientConfig.getGson();
@@ -75,7 +51,7 @@ public class JestClientFactory {
         // set discovery (should be set after setting the httpClient on jestClient)
         if (httpClientConfig.isDiscoveryEnabled()) {
             log.info("Node Discovery enabled...");
-            if (StringUtils.isNotEmpty(httpClientConfig.getDiscoveryFilter())) {
+            if (!Strings.isNullOrEmpty(httpClientConfig.getDiscoveryFilter())) {
                 log.info("Node Discovery filtering nodes on \"{}\"", httpClientConfig.getDiscoveryFilter());
             }
             NodeChecker nodeChecker = createNodeChecker(client, httpClientConfig);
@@ -90,7 +66,7 @@ public class JestClientFactory {
         if (httpClientConfig.getMaxConnectionIdleTime() > 0) {
             log.info("Idle connection reaping enabled...");
 
-            IdleConnectionReaper reaper = new IdleConnectionReaper(httpClientConfig, new HttpReapableConnectionManager(connectionManager, asyncConnectionManager));
+            IdleConnectionReaper reaper = new IdleConnectionReaper(httpClientConfig, new HttpReapableConnectionManager(connectionPool));
             client.setIdleConnectionReaper(reaper);
             reaper.startAsync();
             reaper.awaitRunning();
@@ -98,10 +74,11 @@ public class JestClientFactory {
             log.info("Idle connection reaping disabled...");
         }
 
-        Set<HttpHost> preemptiveAuthTargetHosts = httpClientConfig.getPreemptiveAuthTargetHosts();
+        // TODO: Find out how to implement this in OkHttp. Maybe using an Interceptor?
+        Set<HttpUrl> preemptiveAuthTargetHosts = httpClientConfig.getPreemptiveAuthTargetHosts();
         if (!preemptiveAuthTargetHosts.isEmpty()) {
             log.info("Authentication cache set for preemptive authentication");
-            client.setHttpClientContextTemplate(createPreemptiveAuthContext(preemptiveAuthTargetHosts));
+            // client.setHttpClientContextTemplate(createPreemptiveAuthContext(preemptiveAuthTargetHosts));
         }
 
         return client;
@@ -111,26 +88,24 @@ public class JestClientFactory {
         this.httpClientConfig = httpClientConfig;
     }
 
-    private CloseableHttpClient createHttpClient(HttpClientConnectionManager connectionManager) {
-        return configureHttpClient(
-                HttpClients.custom()
-                        .setConnectionManager(connectionManager)
-                        .setDefaultRequestConfig(getRequestConfig())
-                        .setProxyAuthenticationStrategy(httpClientConfig.getProxyAuthenticationStrategy())
-                        .setRoutePlanner(getRoutePlanner())
-                        .setDefaultCredentialsProvider(httpClientConfig.getCredentialsProvider())
-        ).build();
-    }
+    private OkHttpClient createOkHttpClient(ConnectionPool connectionPool) {
+        final OkHttpClient.Builder clientBuilder = new OkHttpClient.Builder()
+                .connectionPool(connectionPool)
+                .connectTimeout(httpClientConfig.getConnTimeout(), TimeUnit.MILLISECONDS)
+                .readTimeout(httpClientConfig.getReadTimeout(), TimeUnit.MILLISECONDS)
+                .writeTimeout(httpClientConfig.getWriteTimeout(), TimeUnit.MILLISECONDS)
+                .authenticator(httpClientConfig.getAuthenticator())
+                .socketFactory(httpClientConfig.getPlainSocketFactory())
+                .sslSocketFactory(httpClientConfig.getSslSocketFactory(), httpClientConfig.getTrustManager())
+                .proxy(httpClientConfig.getProxy())
+                .proxyAuthenticator(httpClientConfig.getProxyAuthenticator())
+                .proxySelector(httpClientConfig.getProxySelector());
 
-    private CloseableHttpAsyncClient createAsyncHttpClient(NHttpClientConnectionManager connectionManager) {
-        return configureHttpClient(
-                HttpAsyncClients.custom()
-                        .setConnectionManager(connectionManager)
-                        .setDefaultRequestConfig(getRequestConfig())
-                        .setProxyAuthenticationStrategy(httpClientConfig.getProxyAuthenticationStrategy())
-                        .setRoutePlanner(getRoutePlanner())
-                        .setDefaultCredentialsProvider(httpClientConfig.getCredentialsProvider())
-        ).build();
+        if (httpClientConfig.isRequestCompressionEnabled()) {
+            clientBuilder.addInterceptor(new GzipRequestInterceptor());
+        }
+
+        return configureHttpClient(clientBuilder).build();
     }
 
     /**
@@ -141,107 +116,23 @@ public class JestClientFactory {
      * <pre>
      * final JestClientFactory factory = new JestClientFactory() {
      *    {@literal @Override}
-     *  	protected HttpClientBuilder configureHttpClient(HttpClientBuilder builder) {
-     *  		return builder.setDefaultHeaders(...);
+     *  	protected OkHttpClient.Builder configureHttpClient(OkHttpClient.Builder builder) {
+     *  		return builder.addInterceptor(...);
      *    }
      * }
      * </pre>
      */
-    protected HttpClientBuilder configureHttpClient(final HttpClientBuilder builder) {
-        return builder;
-    }
-
-    /**
-     * Extension point for async client
-     */
-    protected HttpAsyncClientBuilder configureHttpClient(final HttpAsyncClientBuilder builder) {
+    protected OkHttpClient.Builder configureHttpClient(final OkHttpClient.Builder builder) {
         return builder;
     }
 
     // Extension point
-    protected HttpRoutePlanner getRoutePlanner() {
-        return httpClientConfig.getHttpRoutePlanner();
-    }
+    protected ConnectionPool getConnectionPool() {
+        // TODO
+        ConnectionPool connectionPool;
+        connectionPool = new ConnectionPool();
 
-    // Extension point
-    protected RequestConfig getRequestConfig() {
-        return RequestConfig.custom()
-                .setConnectTimeout(httpClientConfig.getConnTimeout())
-                .setSocketTimeout(httpClientConfig.getReadTimeout())
-                .build();
-    }
-
-    // Extension point
-    protected NHttpClientConnectionManager getAsyncConnectionManager() {
-        PoolingNHttpClientConnectionManager retval;
-
-        IOReactorConfig ioReactorConfig = IOReactorConfig.custom()
-                .setConnectTimeout(httpClientConfig.getConnTimeout())
-                .setSoTimeout(httpClientConfig.getReadTimeout())
-                .build();
-
-        Registry<SchemeIOSessionStrategy> sessionStrategyRegistry = RegistryBuilder.<SchemeIOSessionStrategy>create()
-                .register("http", httpClientConfig.getHttpIOSessionStrategy())
-                .register("https", httpClientConfig.getHttpsIOSessionStrategy())
-                .build();
-
-        try {
-            retval = new PoolingNHttpClientConnectionManager(
-                    new DefaultConnectingIOReactor(ioReactorConfig),
-                    sessionStrategyRegistry
-            );
-        } catch (IOReactorException e) {
-            throw new IllegalStateException(e);
-        }
-
-        final Integer maxTotal = httpClientConfig.getMaxTotalConnection();
-        if (maxTotal != null) {
-            retval.setMaxTotal(maxTotal);
-        }
-        final Integer defaultMaxPerRoute = httpClientConfig.getDefaultMaxTotalConnectionPerRoute();
-        if (defaultMaxPerRoute != null) {
-            retval.setDefaultMaxPerRoute(defaultMaxPerRoute);
-        }
-        final Map<HttpRoute, Integer> maxPerRoute = httpClientConfig.getMaxTotalConnectionPerRoute();
-        for (Map.Entry<HttpRoute, Integer> entry : maxPerRoute.entrySet()) {
-            retval.setMaxPerRoute(entry.getKey(), entry.getValue());
-        }
-
-        return retval;
-    }
-
-    // Extension point
-    protected HttpClientConnectionManager getConnectionManager() {
-        HttpClientConnectionManager retval;
-
-        Registry<ConnectionSocketFactory> registry = RegistryBuilder.<ConnectionSocketFactory>create()
-                .register("http", httpClientConfig.getPlainSocketFactory())
-                .register("https", httpClientConfig.getSslSocketFactory())
-                .build();
-
-        if (httpClientConfig.isMultiThreaded()) {
-            log.info("Using multi thread/connection supporting pooling connection manager");
-            final PoolingHttpClientConnectionManager poolingConnMgr = new PoolingHttpClientConnectionManager(registry);
-
-            final Integer maxTotal = httpClientConfig.getMaxTotalConnection();
-            if (maxTotal != null) {
-                poolingConnMgr.setMaxTotal(maxTotal);
-            }
-            final Integer defaultMaxPerRoute = httpClientConfig.getDefaultMaxTotalConnectionPerRoute();
-            if (defaultMaxPerRoute != null) {
-                poolingConnMgr.setDefaultMaxPerRoute(defaultMaxPerRoute);
-            }
-            final Map<HttpRoute, Integer> maxPerRoute = httpClientConfig.getMaxTotalConnectionPerRoute();
-            for (Map.Entry<HttpRoute, Integer> entry : maxPerRoute.entrySet()) {
-                poolingConnMgr.setMaxPerRoute(entry.getKey(), entry.getValue());
-            }
-            retval = poolingConnMgr;
-        } else {
-            log.info("Using single thread/connection supporting basic connection manager");
-            retval = new BasicHttpClientConnectionManager(registry);
-        }
-
-        return retval;
+        return connectionPool;
     }
 
     // Extension point
@@ -250,7 +141,9 @@ public class JestClientFactory {
     }
 
     // Extension point
-    protected HttpClientContext createPreemptiveAuthContext(Set<HttpHost> targetHosts) {
+    /* TODO: Find out how to implement this in OkHttp. Maybe using an Interceptor?
+    protected HttpClientContext createPreemptiveAuthContext(Set<HttpUrl> targetHosts) {
+        /*
         HttpClientContext context = HttpClientContext.create();
         context.setCredentialsProvider(httpClientConfig.getCredentialsProvider());
         context.setAuthCache(createBasicAuthCache(targetHosts));
@@ -267,5 +160,5 @@ public class JestClientFactory {
 
         return authCache;
     }
-
+    */
 }

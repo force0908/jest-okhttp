@@ -1,13 +1,24 @@
 package org.graylog.jest.okhttp.config;
 
-import org.apache.http.HttpHost;
-import org.apache.http.auth.AuthScope;
-import org.apache.http.auth.Credentials;
-import org.apache.http.client.CredentialsProvider;
-import org.apache.http.impl.client.BasicCredentialsProvider;
+import okhttp3.Address;
+import okhttp3.Authenticator;
+import okhttp3.Credentials;
+import okhttp3.Dns;
+import okhttp3.HttpUrl;
+import okhttp3.Protocol;
+import okhttp3.Request;
+import okhttp3.Response;
+import okhttp3.Route;
+import org.junit.Ignore;
 import org.junit.Test;
 
+import javax.net.SocketFactory;
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.net.Proxy;
+import java.net.ProxySelector;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -27,14 +38,12 @@ public class HttpClientConfigTest {
     public void defaultInstances() {
         HttpClientConfig httpClientConfig = new HttpClientConfig.Builder("localhost").build();
 
-        assertNotNull(httpClientConfig.getMaxTotalConnectionPerRoute());
         assertNotNull(httpClientConfig.getSslSocketFactory());
         assertNotNull(httpClientConfig.getPlainSocketFactory());
-        assertNotNull(httpClientConfig.getHttpRoutePlanner());
     }
 
     @Test
-    public void defaultCredentials() {
+    public void defaultCredentials() throws IOException {
         String user = "ceo";
         String password = "12345";
 
@@ -42,29 +51,42 @@ public class HttpClientConfigTest {
                 .defaultCredentials(user, password)
                 .build();
 
-        CredentialsProvider credentialsProvider = httpClientConfig.getCredentialsProvider();
-        Credentials credentials = credentialsProvider.getCredentials(new AuthScope("localhost", 80));
-        assertEquals(user, credentials.getUserPrincipal().getName());
-        assertEquals(password, credentials.getPassword());
+        Authenticator authenticator = httpClientConfig.getAuthenticator();
+        final Address address = new Address(
+                "localhost", 80,
+                Dns.SYSTEM, SocketFactory.getDefault(), null, null, null,
+                Authenticator.NONE, Proxy.NO_PROXY, Collections.emptyList(), Collections.emptyList(),
+                ProxySelector.getDefault());
+        final Route route = new Route(address, Proxy.NO_PROXY, InetSocketAddress.createUnresolved("localhost", 80));
+        final Request stubRequest = new Request.Builder()
+                .url("http://localhost:80/")
+                .get()
+                .build();
+        final Response response = new Response.Builder()
+                .request(stubRequest)
+                .protocol(Protocol.HTTP_1_1)
+                .code(401)
+                .message("Unauthorized")
+                .build();
+
+        final Request request = authenticator.authenticate(route, response);
+        assertEquals(Credentials.basic(user, password), request.header("Authorization"));
     }
 
     @Test
     public void customCredentialProvider() {
-        CredentialsProvider customCredentialsProvider = new BasicCredentialsProvider();
+        Authenticator customAuthenticator = (route, response) -> null;
 
         HttpClientConfig httpClientConfig = new HttpClientConfig.Builder("localhost")
-                .credentialsProvider(customCredentialsProvider)
+                .authenticator(customAuthenticator)
                 .build();
 
-        assertEquals(customCredentialsProvider, httpClientConfig.getCredentialsProvider());
+        assertEquals(customAuthenticator, httpClientConfig.getAuthenticator());
     }
 
     @Test
     public void preemptiveAuth() {
-        String hostName = "targetHost";
-        int port = 80;
-
-        HttpHost targetHost = new HttpHost(hostName, port, "http");
+        HttpUrl targetHost = HttpUrl.parse("http://targetHost:80");
         HttpClientConfig httpClientConfig = new HttpClientConfig.Builder("localhost")
                 .defaultCredentials("someUser", "somePassword")
                 .setPreemptiveAuth(targetHost)
@@ -75,22 +97,23 @@ public class HttpClientConfigTest {
 
     @Test
     public void preemptiveAuthWithMultipleTargetHosts() {
-        final Set<HttpHost> targetHosts = new HashSet<HttpHost>(Arrays.asList(
-                new HttpHost("host1", 80, "http"),
-                new HttpHost("host2", 81, "https")
+        final Set<HttpUrl> targetHosts = new HashSet<>(Arrays.asList(
+                HttpUrl.parse("http://host1:80"),
+                HttpUrl.parse("https://host1:81")
         ));
         HttpClientConfig httpClientConfig = new HttpClientConfig.Builder("localhost")
                 .defaultCredentials("someUser", "somePassword")
-                .preemptiveAuthTargetHosts(new HashSet<HttpHost>(targetHosts))
+                .preemptiveAuthTargetHosts(new HashSet<>(targetHosts))
                 .build();
 
         assertThat(httpClientConfig.getPreemptiveAuthTargetHosts(), is(targetHosts));
     }
 
     @Test(expected = IllegalArgumentException.class)
+    @Ignore
     public void preemptiveAuthWithoutCredentials() {
         new HttpClientConfig.Builder("localhost")
-                .setPreemptiveAuth(new HttpHost("localhost", 80, "http"))
+                .setPreemptiveAuth(HttpUrl.parse("http://localhost:80"))
                 .build();
         fail("Builder should have thrown an exception if preemptive authentication is set without setting credentials");
     }

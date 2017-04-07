@@ -1,5 +1,6 @@
 package io.searchbox.common;
 
+import com.carrotsearch.randomizedtesting.annotations.ThreadLeakFilters;
 import org.elasticsearch.cluster.metadata.IndexMetaData;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.node.Node;
@@ -15,6 +16,7 @@ import org.junit.Ignore;
  * @author Dogukan Sonmez
  */
 @Ignore
+@ThreadLeakFilters(filters = {OkHttpThreadsFilter.class})
 public abstract class AbstractIntegrationTest extends ESIntegTestCase {
 
     protected final JestClientFactory factory = new JestClientFactory();
@@ -50,8 +52,8 @@ public abstract class AbstractIntegrationTest extends ESIntegTestCase {
     @After
     public void tearDown() throws Exception {
         super.tearDown();
+
         client.shutdownClient();
         client = null;
     }
-
 }

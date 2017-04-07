@@ -1,25 +1,21 @@
 package org.graylog.jest.okhttp.config.idle;
 
 import io.searchbox.client.config.idle.ReapableConnectionManager;
-import org.apache.http.conn.HttpClientConnectionManager;
-import org.apache.http.nio.conn.NHttpClientConnectionManager;
+import okhttp3.ConnectionPool;
 
 import java.util.concurrent.TimeUnit;
 
+import static java.util.Objects.requireNonNull;
+
 public class HttpReapableConnectionManager implements ReapableConnectionManager {
-    private final HttpClientConnectionManager connectionManager;
-    private final NHttpClientConnectionManager nConnectionManager;
+    private final ConnectionPool connectionPool;
 
-    public HttpReapableConnectionManager(HttpClientConnectionManager connectionManager, NHttpClientConnectionManager nConnectionManager) {
-        if(connectionManager == null || nConnectionManager == null) throw new IllegalArgumentException();
-
-        this.connectionManager = connectionManager;
-        this.nConnectionManager = nConnectionManager;
+    public HttpReapableConnectionManager(ConnectionPool connectionPool) {
+        this.connectionPool = requireNonNull(connectionPool, "ConnectionPool must not be null");
     }
 
     @Override
     public void closeIdleConnections(long idleTimeout, TimeUnit unit) {
-        connectionManager.closeIdleConnections(idleTimeout, unit);
-        nConnectionManager.closeIdleConnections(idleTimeout, unit);
+        connectionPool.evictAll();
     }
 }
